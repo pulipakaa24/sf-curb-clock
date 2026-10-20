@@ -1,0 +1,66 @@
+# Builds the map from the committed raw data and publishes it to GitHub Pages.
+# Runs on every push to main. Run it by hand (Actions → Deploy map → Run workflow)
+# and tick "refresh_data" to rebuild from a fresh DataSF download instead.
+name: Deploy map
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      refresh_data:
+        description: Download fresh data from DataSF before building
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Test rules
+        run: node test_engine.js
+
+      - name: Build map
+        run: python3 pipeline.py ${{ inputs.refresh_data && '--download' || '' }}
+
+      - name: Assemble site
+        run: |
+          mkdir -p _site/data
+          cp sf_72hr_map.html _site/index.html
+          cp out/sf_blocksides.csv out/sf_blocksides.geojson out/sf_regulations.geojson out/match_report.txt _site/data/
+          cp raw/DOWNLOADED_AT.txt _site/data/
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
