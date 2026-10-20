@@ -1280,6 +1280,11 @@ p { margin: 0; }
   $('controls').addEventListener('submit', function (e) { e.preventDefault(); });
   $('sources').textContent = 'Data: SF Street Sweeping Schedule (yhqp-riqs) and Parking Regulations (hi6h-neyh), DataSF, downloaded ' +
     DATA.downloaded_at.slice(0, 10) + '. ' + sides.length + ' curb lines.';
+  if (/\.github\.io$/.test(location.hostname)) {
+    var dl = document.createElement('span');
+    dl.innerHTML = ' Download: <a href="data/sf_blocksides.csv">CSV</a> · <a href="data/sf_blocksides.geojson">block sides GeoJSON</a> · <a href="data/sf_regulations.geojson">regulations GeoJSON</a>.';
+    $('sources').appendChild(dl);
+  }
 
   var opts;
   function popupHtml(s) {

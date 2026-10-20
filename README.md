@@ -2,7 +2,9 @@
 
 An interactive map of San Francisco street parking. Pick an arrival time and it colors every block side by how long a car can stay there (up to 72 hours), and says exactly what ends the stay. It started as a Sunset District map and now covers all 41 analysis neighborhoods.
 
-Open `sf_72hr_map.html` in any browser. Everything the map needs is inside that one file: the data, the rule engine and Leaflet. Only the background maps (Esri Streets, Light gray, Dark gray, Satellite) need internet; without them you still get every curb, with street names drawn from the data.
+**Live map:** https://pulipakaa24.github.io/sf-curb-clock/
+
+Or open `sf_72hr_map.html` in any browser. Everything the map needs is inside that one file: the data, the rule engine and Leaflet. Only the background maps (Esri Streets, Light gray, Dark gray, Satellite) need internet; without them you still get every curb, with street names drawn from the data.
 
 ## Files
 
@@ -42,6 +44,17 @@ node test_engine.js
 ```
 
 `--neighborhoods` builds a smaller map of just those areas. `--download` fetches fresh data first and needs network access to data.sfgov.org.
+
+## GitHub Pages
+
+`.github/workflows/pages.yml` runs on every push to `main`. It runs the rule tests, rebuilds the map from `raw/`, and publishes:
+
+- `index.html`: the map
+- `data/`: the CSV, GeoJSON, match report and download date
+
+To rebuild from fresh DataSF data without committing it, go to Actions → Deploy map → Run workflow and tick **refresh_data**. The deployed site then shows newer data than `raw/` in the repo. To keep them in sync, run `python3 pipeline.py --download` locally and commit instead.
+
+One-time setup: in the repo's Settings → Pages, set **Source** to **GitHub Actions**.
 
 ## Data
 
