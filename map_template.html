@@ -1,0 +1,445 @@
+<title>SF Curb Clock</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Overpass:wght@400;600;800&family=Overpass+Mono:wght@400;600&display=swap">
+<style>/*__LEAFLET_CSS__*/</style>
+<style>
+/* Layout: control column on the left like a stack of curb signs, map fills the rest.
+   On phones: controls, then the map, then the fine print. */
+:root {
+  --fog: #eef1f3;          /* page ground: Sunset fog */
+  --paper: #ffffff;        /* panel surfaces */
+  --ink: #18222b;          /* text */
+  --ink-2: #51606c;        /* secondary text */
+  --rule: #d3dae0;         /* hairlines */
+  --sign: #0f6b45;         /* accent: SFMTA time-limit-sign green */
+  --sign-ink: #ffffff;
+  --warn-bg: #fff4d6;
+  --warn-ink: #6b4a00;
+  --map-bg: #e4e8eb;
+  /* stay bands (semantic, not the accent) */
+  --b-full: #1a8c4a;
+  --b-half: #8cc63f;
+  --b-sixth: #f0b323;
+  --b-some: #e86a1c;
+  --b-none: #9e1b1b;
+  --b-orphan: #6b7a86;
+  --f-display: "Overpass", "Highway Gothic", "Helvetica Neue", Arial, sans-serif;
+  --f-body: "Overpass", "Helvetica Neue", Arial, sans-serif;
+  --f-data: "Overpass Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --s-1: 0.75rem; --s-2: 0.875rem; --s-3: 1rem; --s-4: 1.25rem; --s-5: 1.75rem;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --fog: #12181d; --paper: #1a2229; --ink: #e6ecf0; --ink-2: #9aa8b3; --rule: #2c3842;
+    --sign: #3fb27a; --sign-ink: #08140e; --warn-bg: #3a2e0c; --warn-ink: #f3d68a; --map-bg: #1c2329;
+    --b-full: #2fb565; --b-half: #a6d75b; --b-sixth: #f4c143; --b-some: #f5843a; --b-none: #e0453a; --b-orphan: #8796a2;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --fog: #12181d; --paper: #1a2229; --ink: #e6ecf0; --ink-2: #9aa8b3; --rule: #2c3842;
+  --sign: #3fb27a; --sign-ink: #08140e; --warn-bg: #3a2e0c; --warn-ink: #f3d68a; --map-bg: #1c2329;
+  --b-full: #2fb565; --b-half: #a6d75b; --b-sixth: #f4c143; --b-some: #f5843a; --b-none: #e0453a; --b-orphan: #8796a2;
+}
+
+html, body { height: 100%; }
+body {
+  background: var(--fog); color: var(--ink);
+  font-family: var(--f-body); font-size: var(--s-2); line-height: 1.45;
+  display: grid; grid-template-columns: minmax(320px, 380px) 1fr;
+}
+.side { overflow-y: auto; border-right: 1px solid var(--rule); background: var(--fog);
+  display: flex; flex-direction: column; gap: 18px;
+  padding-block: 18px 28px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: 16px; }
+#map { height: 100%; background: var(--map-bg); }
+
+header { display: flex; flex-direction: column; gap: 4px; }
+.eyebrow { font-family: var(--f-data); font-size: var(--s-1); letter-spacing: .06em; text-transform: uppercase; color: var(--ink-2); }
+h1 { font-family: var(--f-display); font-weight: 800; font-size: var(--s-5); line-height: 1.05; margin: 0; text-wrap: balance; letter-spacing: -0.01em; }
+h2 { font-family: var(--f-display); font-weight: 800; font-size: var(--s-1); letter-spacing: .08em; text-transform: uppercase; margin: 0; color: var(--ink-2); }
+p { margin: 0; }
+.lede { color: var(--ink-2); max-width: 60ch; }
+
+/* The control "sign": green plate like an SFMTA time-limit sign */
+.plate { background: var(--sign); color: var(--sign-ink); border-radius: 10px; padding: 14px; display: grid; gap: 12px; }
+.plate label, .plate .lab { font-family: var(--f-data); font-size: var(--s-1); letter-spacing: .05em; text-transform: uppercase; opacity: .9; }
+.field { display: grid; gap: 4px; }
+.row { display: flex; gap: 10px; flex-wrap: wrap; align-items: end; }
+.row > .field { flex: 1 1 140px; }
+.plate input[type="datetime-local"], .plate input[type="number"], .plate select {
+  font: 600 var(--s-3) var(--f-data); color: var(--ink); background: var(--paper);
+  border: 0; border-radius: 6px; padding: 8px 10px; width: 100%; min-width: 0; box-sizing: border-box; }
+.plate button { font: 600 var(--s-2) var(--f-body); background: transparent; color: var(--sign-ink);
+  border: 1.5px solid currentColor; border-radius: 6px; padding: 7px 12px; cursor: pointer; }
+.plate button:hover { background: color-mix(in srgb, var(--sign-ink) 14%, transparent); }
+.checks { display: grid; gap: 6px; }
+.plate .check { display: flex; gap: 8px; align-items: center; font-size: var(--s-2); text-transform: none; letter-spacing: 0; font-family: var(--f-body); }
+.plate .check input { width: 16px; height: 16px; accent-color: var(--paper); margin: 0; }
+.seg { display: flex; border: 1.5px solid currentColor; border-radius: 6px; overflow: hidden; }
+.seg input { position: absolute; opacity: 0; pointer-events: none; }
+.seg label { flex: 1; text-align: center; padding: 6px 4px; cursor: pointer; font: 600 var(--s-2) var(--f-body); text-transform: none; letter-spacing: 0; opacity: 1; }
+.seg input:checked + label { background: var(--paper); color: var(--ink); }
+.seg input:focus-visible + label, :focus-visible { outline: 2px solid var(--b-sixth); outline-offset: 2px; }
+
+/* Summary */
+.summary { display: grid; gap: 8px; }
+.big { font-family: var(--f-display); font-weight: 800; font-size: var(--s-4); line-height: 1.15; font-variant-numeric: tabular-nums; }
+.big b { color: var(--b-full); }
+.window { font-family: var(--f-data); font-size: var(--s-1); color: var(--ink-2); font-variant-numeric: tabular-nums; }
+.bar { display: flex; height: 12px; border-radius: 3px; overflow: hidden; background: var(--rule); }
+.bar span { display: block; height: 100%; }
+.legend { display: grid; gap: 4px; margin: 0; padding: 0; list-style: none; }
+.legend li { display: grid; grid-template-columns: 26px 1fr auto; gap: 8px; align-items: center; font-variant-numeric: tabular-nums; }
+.legend .sw { height: 5px; border-radius: 3px; }
+.legend .sw.dash { background: repeating-linear-gradient(90deg, var(--b-orphan) 0 5px, transparent 5px 9px) !important; }
+.legend .n { font-family: var(--f-data); font-size: var(--s-1); color: var(--ink-2); }
+.warn { background: var(--warn-bg); color: var(--warn-ink); border-radius: 6px; padding: 8px 10px; font-size: var(--s-1); }
+
+.notes { display: grid; gap: 10px; }
+.notes ul { margin: 0; padding-left: 1.1em; display: grid; gap: 5px; color: var(--ink-2); font-size: var(--s-1); max-width: 62ch; }
+.notes a { color: var(--sign); }
+.src { font-family: var(--f-data); font-size: 0.7rem; color: var(--ink-2); line-height: 1.5; }
+
+/* Map chrome */
+.leaflet-container { font-family: var(--f-body); background: var(--map-bg); }
+.leaflet-popup-content-wrapper, .leaflet-popup-tip { background: var(--paper); color: var(--ink); box-shadow: 0 6px 24px rgb(0 0 0 / .22); }
+.leaflet-popup-content { margin: 14px 16px; font-size: var(--s-2); line-height: 1.4; min-width: 230px; }
+.leaflet-container a.leaflet-popup-close-button { color: var(--ink-2); }
+.leaflet-control-zoom a, .leaflet-control-attribution { background: var(--paper) !important; color: var(--ink) !important; }
+.leaflet-control-attribution a { color: var(--sign) !important; }
+.pop h3 { font-family: var(--f-display); font-weight: 800; font-size: var(--s-3); margin: 0; line-height: 1.2; }
+.pop .sub { color: var(--ink-2); font-size: var(--s-1); margin-top: 2px; }
+.pop .stay { display: flex; align-items: baseline; gap: 8px; margin: 10px 0 2px; }
+.pop .stay .h { font: 800 1.6rem/1 var(--f-display); font-variant-numeric: tabular-nums; }
+.pop .chip { font: 600 0.7rem var(--f-data); text-transform: uppercase; letter-spacing: .05em; padding: 2px 6px; border-radius: 4px; color: #fff; }
+.pop .why { margin: 4px 0 10px; }
+.pop .why time { font-family: var(--f-data); font-weight: 600; }
+.pop h4 { font: 800 0.68rem var(--f-display); letter-spacing: .08em; text-transform: uppercase; color: var(--ink-2); margin: 8px 0 3px; }
+.pop ul { margin: 0; padding-left: 1.1em; }
+.pop .muted { color: var(--ink-2); font-size: var(--s-1); }
+.pop .links { display: flex; flex-wrap: wrap; gap: 6px 14px; margin: 10px 0 0; padding-top: 8px; border-top: 1px solid var(--rule); }
+.pop .links a { color: var(--sign); font-weight: 600; }
+.tilenote { position: absolute; z-index: 500; left: 50%; bottom: 28px; translate: -50% 0; max-width: min(420px, calc(100% - 32px)); background: var(--paper); color: var(--ink); border: 1px solid var(--rule); border-radius: 8px; padding: 10px 12px; font-size: var(--s-1); box-shadow: 0 4px 16px rgb(0 0 0 / .18); }
+.leaflet-control-layers { background: var(--paper) !important; color: var(--ink) !important; border-radius: 8px !important; font-size: var(--s-1); }
+.street-label { font: 600 11px var(--f-body); color: var(--ink-2); white-space: nowrap; text-shadow: 0 0 3px var(--map-bg), 0 0 3px var(--map-bg), 0 0 3px var(--map-bg); pointer-events: none; }
+.street-label span { display: inline-block; transform-origin: center; translate: -50% -50%; }
+
+@media (max-width: 760px) {
+  body { display: flex; flex-direction: column; height: auto; }
+  .side { display: contents; }
+  .panel, .notes { padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+  .panel { order: 1; padding-block: 16px; display: flex; flex-direction: column; gap: 16px; }
+  #map { order: 2; height: 72vh; height: 72svh; flex: none; border-block: 1px solid var(--rule); }
+  .notes { order: 3; padding-block: 16px 28px; }
+}
+@media (min-width: 761px) {
+  .panel { display: flex; flex-direction: column; gap: 18px; }
+}
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+</style>
+
+<div class="side">
+  <div class="panel">
+    <header>
+      <span class="eyebrow">San Francisco street parking</span>
+      <h1>How long can the car stay?</h1>
+      <p class="lede">Each curb is colored by how long you can stay if you park at the time below. A stay ends at the first street sweeping, time limit or other restriction, and never later than the 72-hour limit.</p>
+    </header>
+
+    <form class="plate" id="controls" autocomplete="off">
+      <div class="row">
+        <div class="field">
+          <label for="arrival">Arriving</label>
+          <input type="datetime-local" id="arrival" step="900">
+        </div>
+        <button type="button" id="now">Now</button>
+      </div>
+      <div class="row">
+        <div class="field">
+          <label for="hours">Stay up to (hours)</label>
+          <input type="number" id="hours" min="1" max="72" step="1" value="72" inputmode="numeric">
+        </div>
+        <div class="field">
+          <label for="rpp">My RPP permit</label>
+          <select id="rpp"><option value="">None</option></select>
+        </div>
+      </div>
+      <div class="field">
+        <label for="area">Neighborhood</label>
+        <select id="area"><option value="">All of San Francisco</option></select>
+      </div>
+      <div class="checks">
+        <label class="check"><input type="checkbox" id="oversized"> Oversized vehicle (over 22 ft long or 7 ft tall)</label>
+        <label class="check"><input type="checkbox" id="fullonly"> Only show curbs clear for the whole stay</label>
+        <label class="check"><input type="checkbox" id="rawregs"> Show raw regulation lines</label>
+      </div>
+    </form>
+
+    <section class="summary" aria-live="polite">
+      <p class="big" id="headline">–</p>
+      <p class="window" id="window">–</p>
+      <div class="bar" id="bar" aria-hidden="true"></div>
+      <ul class="legend" id="legend"></ul>
+      <p class="warn" id="dst" hidden></p>
+      <p class="warn" id="nometers" hidden>Parking meters aren't in this build, so metered curbs downtown and on commercial streets show as free. Check for a meter before you park.</p>
+    </section>
+  </div>
+
+  <section class="notes">
+    <h2>What this map can't see</h2>
+    <ul>
+      <li>Posted signs always win. Some regulation records were last edited in 2017, and the city says the regulations data hasn't been fully vetted.</li>
+      <li>Meters: a curb with any active meter is treated as metered every day 9 AM–6 PM. DataSF's meter list is current, but its schedules date from 2014, so check the meter for its real hours and limits.</li>
+      <li>Time-limit records are patchy on commercial streets (in the Sunset, only 9 of 60 Taraval block sides have one). Expect posted limits the map doesn't show.</li>
+      <li>Tow-away lanes (commute-hour no stopping) are mostly missing from the data. Downtown and on arterials, read every sign.</li>
+      <li>Color curbs (red, yellow, white, blue, green), bus zones, driveways, hydrants and the clearance needed near crosswalks and corners are not in the data. The map shows which block sides you can use, not exact legal spaces.</li>
+      <li>Temporary restrictions are not included: construction, events, film permits, or Great Highway or other street closures.</li>
+      <li>Bike-lane sweeping isn't in the sweeping data.</li>
+      <li>Holiday exceptions to sweeping are ignored, so the map assumes sweeping always happens.</li>
+      <li>Times are local wall-clock time. A stay that spans a daylight-saving change can be off by an hour.</li>
+      <li>The 72-hour rule (CVC 22651(k)) applies even with a disabled placard or RPP permit, and it's enforced when someone complains. After moving, SFMTA says to go at least one block or one-tenth of a mile.</li>
+      <li>No line means the street isn't in either dataset. Check the posted signs.</li>
+      <li>The sweeping data is missing many streets in Russian Hill, North Beach and Nob Hill. Curbs there show as dashed regulation-only lines and may well be swept.</li>
+      <li>Dashed lines are regulations with no matching sweeping row. The map treats them as unswept, which may be wrong.</li>
+    </ul>
+    <p class="src" id="sources"></p>
+  </section>
+</div>
+<div id="map" role="region" aria-label="Map of San Francisco block sides colored by maximum stay"><p class="tilenote" id="tilenote" hidden>The background map can't load here, so street names are drawn from the data. Open the downloaded HTML file in a browser to see the full street map, or use the Google Maps links in each popup.</p></div>
+
+<script>/*__LEAFLET_JS__*/</script>
+<script>/*__ENGINE_JS__*/</script>
+<script>
+(function () {
+  'use strict';
+  var DATA = /*__DATA__*/null;
+  var E = window.ParkEngine, HOUR = E.HOUR;
+  var BANDS = [
+    { key: 'full', label: function (H) { return 'Clear for the full ' + H + ' h'; } },
+    { key: 'half', label: function (H) { return 'At least ' + fmtH(H / 2); } },
+    { key: 'sixth', label: function (H) { return 'At least ' + fmtH(H / 6); } },
+    { key: 'some', label: function (H) { return 'Under ' + fmtH(H / 6); } },
+    { key: 'none', label: function () { return "Can't park on arrival"; } }
+  ];
+  var css = getComputedStyle(document.documentElement);
+  function color(key) { return css.getPropertyValue('--b-' + key).trim(); }
+
+  function fmtH(h) {
+    if (h >= 24 && h % 24 === 0) return h / 24 + (h === 24 ? ' day' : ' days');
+    if (h >= 10 || h === Math.round(h)) return Math.round(h) + ' h';
+    var m = Math.round(h * 60);
+    return m < 60 ? m + ' min' : Math.floor(m / 60) + ' h ' + (m % 60) + ' min';
+  }
+  function fmtStay(h) {
+    if (h <= 0) return '0 h';
+    var whole = Math.floor(h + 1e-9), m = Math.round((h - whole) * 60);
+    return whole + ' h' + (m ? ' ' + m + ' min' : '');
+  }
+  var DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  var MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  function fmtWhen(ms) {
+    var d = new Date(ms), h = d.getUTCHours(), m = d.getUTCMinutes();
+    var hh = h % 12 === 0 ? 12 : h % 12;
+    return DOW[d.getUTCDay()] + ' ' + MON[d.getUTCMonth()] + ' ' + d.getUTCDate() + ', ' + hh + (m ? ':' + String(m).padStart(2, '0') : '') + (h < 12 ? ' AM' : ' PM');
+  }
+  function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+
+  // Naive local "now" in San Francisco, as ms of a UTC date.
+  function laNow() {
+    var parts = {};
+    new Intl.DateTimeFormat('en-US', { timeZone: 'America/Los_Angeles', hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
+      .formatToParts(new Date()).forEach(function (p) { parts[p.type] = p.value; });
+    var t = Date.UTC(+parts.year, +parts.month - 1, +parts.day, +parts.hour % 24, +parts.minute);
+    return Math.ceil(t / (15 * 60e3)) * 15 * 60e3; // round up to the quarter hour
+  }
+  function toInput(ms) { return new Date(ms).toISOString().slice(0, 16); }
+  function fromInput(v) {
+    var m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/.exec(v);
+    return m ? Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5]) : null;
+  }
+  // US DST transitions (2 AM local): 2nd Sunday of March, 1st Sunday of November.
+  function nthSunday(y, mo, n) { var d = new Date(Date.UTC(y, mo, 1)); var first = 1 + (7 - d.getUTCDay()) % 7; return Date.UTC(y, mo, first + 7 * (n - 1), 2); }
+  function dstCrossing(a, b) {
+    var y = new Date(a).getUTCFullYear(), out = [];
+    [y, y + 1].forEach(function (yy) {
+      [[nthSunday(yy, 2, 2), 'clocks spring forward'], [nthSunday(yy, 10, 1), 'clocks fall back']].forEach(function (t) {
+        if (t[0] > a && t[0] < b) out.push(t);
+      });
+    });
+    return out;
+  }
+
+  // ---------- data prep
+  var regs = DATA.regs;
+  var sides = DATA.sides.map(function (s) {
+    return {
+      street: s.s, limits: s.l, side: s.b, area: DATA.nh[s.a], metered: s.m > 0, meters: s.m, coords: s.g.map(function (c) { return [c[1], c[0]]; }),
+      sweeps: s.w.map(function (w) { return { wd: w[0], from: w[1], to: w[2], weeks: [0, 1, 2, 3, 4].map(function (i) { return !!(w[3] & (1 << i)); }) }; }),
+      regs: s.r.map(function (i) { return regs[i]; }).concat(s.m > 0 ? [E.METERED] : []), orphan: false
+    };
+  });
+  DATA.orphans.forEach(function (o) {
+    sides.push({ street: null, limits: null, side: null, area: DATA.nh[o.a], coords: o.g.map(function (l) { return l.map(function (c) { return [c[1], c[0]]; }); }),
+      sweeps: [], regs: [regs[o.r]], orphan: true });
+  });
+
+  // ---------- map
+  var map = L.map('map', { preferCanvas: true, zoomControl: true, minZoom: 12, maxZoom: 19 }).fitBounds([[37.708, -122.515], [37.812, -122.357]]);
+  var dark = matchMedia('(prefers-color-scheme: dark)').matches;
+  var t = document.documentElement.getAttribute('data-theme');
+  if (t) dark = t === 'dark';
+  // Basemaps (Esri, no key needed). Streets is the default so landmarks and street names are visible.
+  var ESRI = 'https://server.arcgisonline.com/ArcGIS/rest/services/';
+  var lp = map.createPane('labels'); lp.style.zIndex = 450; lp.style.pointerEvents = 'none';
+  var ATTR = 'Tiles &copy; Esri &mdash; Esri, HERE, Garmin, USGS, &copy; OpenStreetMap contributors · Data: DataSF';
+  function esri(path, native, extra) { return L.tileLayer(ESRI + path + '/MapServer/tile/{z}/{y}/{x}', Object.assign({ maxZoom: 19, maxNativeZoom: native, attribution: ATTR }, extra || {})); }
+  // Each basemap gets a transparent street-name layer drawn above the curb lines so names stay readable.
+  var basemaps = {
+    'Streets': L.layerGroup([esri('World_Street_Map', 19), esri('Canvas/World_Light_Gray_Reference', 16, { pane: 'labels' })]),
+    'Light gray': L.layerGroup([esri('Canvas/World_Light_Gray_Base', 16), esri('Canvas/World_Light_Gray_Reference', 16, { pane: 'labels' })]),
+    'Dark gray': L.layerGroup([esri('Canvas/World_Dark_Gray_Base', 16), esri('Canvas/World_Dark_Gray_Reference', 16, { pane: 'labels' })]),
+    'Satellite': L.layerGroup([esri('World_Imagery', 19), esri('Canvas/World_Dark_Gray_Reference', 16, { pane: 'labels' })])
+  };
+  var startBase = 'Streets';
+  try { var saved = localStorage.getItem('curbclock.basemap'); if (saved && basemaps[saved]) startBase = saved; } catch (e) {}
+  basemaps[startBase].addTo(map);
+  L.control.layers(basemaps, null, { position: 'topright', collapsed: false }).addTo(map);
+  map.on('baselayerchange', function (e) { try { localStorage.setItem('curbclock.basemap', e.name); } catch (err) {} });
+
+  // If tiles can't load (offline, or a host that blocks outside images), say so and draw our own street names.
+  var tilesOk = false, tileErrors = 0;
+  map.on('layeradd', function (e) {
+    if (!e.layer.on || !(e.layer instanceof L.TileLayer)) return;
+    e.layer.on('tileload', function () { tilesOk = true; document.getElementById('tilenote').hidden = true; syncLabels(); });
+    e.layer.on('tileerror', function () { if (++tileErrors >= 4 && !tilesOk) { document.getElementById('tilenote').hidden = false; syncLabels(); } });
+  });
+  Object.keys(basemaps).forEach(function (k) { if (map.hasLayer(basemaps[k])) { map.removeLayer(basemaps[k]); basemaps[k].addTo(map); } });
+  var renderer = L.canvas({ padding: 0.5, tolerance: 6 });
+
+  sides.forEach(function (s) {
+    s.casing = L.polyline(s.coords, { renderer: renderer, weight: 6, opacity: 0.85, color: '#ffffff', lineCap: 'butt', interactive: false });
+    s.layer = L.polyline(s.coords, { renderer: renderer, weight: 4, opacity: 1, lineCap: 'butt', dashArray: s.orphan ? '6 5' : null });
+    s.layer.bindPopup(function () { return popupHtml(s); }, { maxWidth: 320, autoPanPadding: [20, 20] });
+  });
+  var rawLayer = L.layerGroup(DATA.raw.map(function (r) {
+    var reg = regs[r.r];
+    return L.polyline(r.g.map(function (l) { return l.map(function (c) { return [c[1], c[0]]; }); }),
+      { renderer: renderer, weight: 1.5, color: css.getPropertyValue('--ink').trim(), opacity: 0.8 })
+      .bindTooltip(esc(E.describeReg(reg)), { sticky: true });
+  }));
+
+  // Street-name labels (the basemap has none, and tiles may be unavailable offline).
+  var labelLayer = L.layerGroup();
+  (function () {
+    var seen = {};
+    sides.forEach(function (s) {
+      if (s.orphan || !s.street || s.coords.length < 2) return;
+      var k = s.street;
+      seen[k] = (seen[k] || 0) + 1;
+      if (seen[k] % 6 !== 1) return;
+      var a = map.project(s.coords[0], 16), b = map.project(s.coords[s.coords.length - 1], 16);
+      var ang = Math.atan2(b.y - a.y, b.x - a.x) * 180 / Math.PI;
+      if (ang > 90) ang -= 180; if (ang < -90) ang += 180;
+      var mid = s.coords[Math.floor(s.coords.length / 2)];
+      if (s.coords.length === 2) mid = [(s.coords[0][0] + s.coords[1][0]) / 2, (s.coords[0][1] + s.coords[1][1]) / 2];
+      labelLayer.addLayer(L.marker(mid, { interactive: false, keyboard: false,
+        icon: L.divIcon({ className: 'street-label', iconSize: null, html: '<span style="rotate:' + ang.toFixed(1) + 'deg">' + esc(s.street) + '</span>' }) }));
+    });
+  })();
+  function syncLabels() { if (!tilesOk && map.getZoom() >= 15) labelLayer.addTo(map); else labelLayer.remove(); }
+  map.on('zoomend', syncLabels); syncLabels();
+  function weightFor(z) { return z <= 13 ? 1.5 : z === 14 ? 2.5 : z === 15 ? 3.5 : z === 16 ? 5 : 7; }
+  map.on('zoomend', function () { var w = weightFor(map.getZoom()); sides.forEach(function (s) { s.layer.setStyle({ weight: w }); s.casing.setStyle({ weight: w + 2.5 }); }); });
+
+  // ---------- state
+  var $ = function (id) { return document.getElementById(id); };
+  var rppSel = $('rpp');
+  DATA.nh.forEach(function (n) { var o = document.createElement('option'); o.value = n; o.textContent = n; $('area').appendChild(o); });
+  try { var savedArea = localStorage.getItem('curbclock.area'); if (savedArea && DATA.nh.indexOf(savedArea) >= 0) $('area').value = savedArea; } catch (e) {}
+  function zoomToArea() {
+    var a = $('area').value, b = a ? DATA.nh_bounds[a] : [37.708, -122.515, 37.812, -122.357];
+    map.fitBounds([[b[0], b[1]], [b[2], b[3]]], { padding: [16, 16] });
+    try { localStorage.setItem('curbclock.area', a); } catch (e) {}
+  }
+  $('area').addEventListener('change', zoomToArea);
+  $('nometers').hidden = !!DATA.has_meters;
+  if ($('area').value) zoomToArea();
+  DATA.rpp_areas.forEach(function (a) { var o = document.createElement('option'); o.value = a; o.textContent = 'Area ' + a; rppSel.appendChild(o); });
+  $('arrival').value = toInput(laNow());
+  $('now').addEventListener('click', function () { $('arrival').value = toInput(laNow()); update(); });
+  $('controls').addEventListener('input', update);
+  $('controls').addEventListener('change', update);
+  $('controls').addEventListener('submit', function (e) { e.preventDefault(); });
+  $('sources').textContent = 'Data: SF Street Sweeping Schedule (yhqp-riqs) and Parking Regulations (hi6h-neyh), DataSF, downloaded ' +
+    DATA.downloaded_at.slice(0, 10) + '. ' + sides.length + ' curb lines.';
+
+  var opts;
+  function popupHtml(s) {
+    var r = s.result, H = opts.hours, b = E.band(r.stay, H);
+    var title = s.orphan ? 'Regulated curb, no sweeping data' : esc(s.street);
+    var sub = s.orphan ? esc(s.area) : esc(s.limits) + ' · ' + esc(s.side) + ' side · ' + esc(s.area) + (s.meters ? ' · ' + s.meters + (s.meters === 1 ? ' meter' : ' meters') : '');
+    var why = r.end == null
+      ? 'Nothing in the data ends your stay before <time>' + fmtWhen(opts.arrival + H * HOUR) + '</time>.'
+      : (r.stay <= 0 ? 'Not allowed on arrival: ' : 'Stay ends <time>' + fmtWhen(r.end) + '</time>: ') + esc(r.reason) + '.';
+    var sweeps = s.sweeps.length
+      ? '<ul>' + E.mergeSweeps(s.sweeps).map(function (w) { return '<li>' + esc(E.describeSweep(w)) + '</li>'; }).join('') + '</ul>'
+      : '<p class="muted">' + (s.orphan ? 'No sweeping row matched this curb.' : 'None listed.') + '</p>';
+    var rg = s.regs.length
+      ? '<ul>' + s.regs.map(function (g) { return '<li>' + esc(E.describeReg(g)) + (g.last_edited ? ' <span class="muted">(record edited ' + esc(g.last_edited) + ')</span>' : '') + '</li>'; }).join('') + '</ul>'
+      : '<p class="muted">No regulation in the data for this side.</p>';
+    return '<div class="pop"><h3>' + title + '</h3><div class="sub">' + sub + '</div>' +
+      '<div class="stay"><span class="h">' + fmtStay(r.stay) + '</span><span class="chip" style="background:' + color(b) + '">' + esc(BANDS.filter(function (x) { return x.key === b; })[0].label(H)) + '</span></div>' +
+      '<p class="why">' + why + '</p><h4>Street sweeping</h4>' + sweeps + '<h4>Regulations</h4>' + rg +
+      '<p class="links"><a href="' + gmaps(s, false) + '" target="_blank" rel="noopener">Google Maps</a><a href="' + gmaps(s, true) + '" target="_blank" rel="noopener">Street View (check the signs)</a></p></div>';
+  }
+
+  function gmaps(s, pano) {
+    var line = s.orphan ? s.coords[0] : s.coords, p;
+    if (line.length === 2) p = [(line[0][0] + line[1][0]) / 2, (line[0][1] + line[1][1]) / 2];
+    else p = line[Math.floor(line.length / 2)];
+    var ll = p[0].toFixed(6) + ',' + p[1].toFixed(6);
+    return pano ? 'https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=' + ll
+                : 'https://www.google.com/maps/search/?api=1&query=' + ll;
+  }
+
+  function update() {
+    var arrival = fromInput($('arrival').value);
+    if (arrival == null) return;
+    var H = Math.max(1, Math.min(72, Math.round(+$('hours').value || 72)));
+    opts = { arrival: arrival, hours: H, oversized: $('oversized').checked, rpp: rppSel.value || null };
+    var area = $('area').value;
+    var fullOnly = $('fullonly').checked;
+    var counts = { full: 0, half: 0, sixth: 0, some: 0, none: 0 }, total = 0;
+    sides.forEach(function (s) {
+      s.result = E.evaluate(s, opts);
+      var b = E.band(s.result.stay, H);
+      var inArea = !area || s.area === area;
+      if (inArea) { counts[b]++; total++; }
+      var show = inArea && (!fullOnly || b === 'full');
+      s.layer.setStyle({ weight: weightFor(map.getZoom()), color: s.orphan && b === 'full' ? color('orphan') : color(b) });
+      s.casing.setStyle({ weight: weightFor(map.getZoom()) + 2.5 });
+      if (show && !map.hasLayer(s.layer)) { s.casing.addTo(map); s.layer.addTo(map); }
+      if (!show && map.hasLayer(s.layer)) { s.casing.remove(); s.layer.remove(); }
+    });
+    if ($('rawregs').checked) rawLayer.addTo(map); else rawLayer.remove();
+
+    $('headline').innerHTML = '<b>' + counts.full.toLocaleString() + '</b> of ' + total.toLocaleString() + ' curbs clear for the full ' + H + ' h';
+    $('window').textContent = fmtWhen(arrival) + ' → ' + fmtWhen(arrival + H * HOUR);
+    $('bar').innerHTML = BANDS.map(function (b) { return '<span style="width:' + (100 * counts[b.key] / (total || 1)) + '%;background:' + color(b.key) + '"></span>'; }).join('');
+    $('legend').innerHTML = BANDS.map(function (b) {
+      return '<li><span class="sw" style="background:' + color(b.key) + '"></span><span>' + esc(b.label(H)) + '</span><span class="n">' + counts[b.key] + '</span></li>';
+    }).join('') + '<li><span class="sw dash"></span><span>Regulated curb, not in sweeping data (gray when clear)</span><span class="n"></span></li>' +
+      '<li><span class="sw" style="background:transparent;border:1px dashed var(--rule)"></span><span>No line: no data, check posted signs</span><span class="n"></span></li>';
+    var x = dstCrossing(arrival, arrival + H * HOUR);
+    $('dst').hidden = !x.length;
+    if (x.length) $('dst').textContent = 'Your stay spans a daylight-saving change (' + x.map(function (t) { return t[1] + ' ' + fmtWhen(t[0]); }).join(', ') +
+      '). Times after it may be off by an hour, so leave an hour of margin.';
+    map.closePopup();
+  }
+  update();
+})();
+</script>

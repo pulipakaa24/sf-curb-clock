@@ -1,0 +1,8 @@
+Study area: all 41 analysis neighborhoods
+Sweeping: 22538 block sides in study area (824 citywide "Holiday" rows ignored); 22 rows citywide had no geometry; 0 rows had geometry differing from the first row of their side
+Side placement: {'compass agrees with L/R': 22106, 'no compass side, used L/R': 424, 'compass DISAGREES with L/R': 8}
+Regulations: 7778 records in study area; {'Time limited': 6837, 'Time Limited': 51, 'No oversized vehicles': 531, 'Pay or Permit': 58, 'No parking any time': 178, 'Government permit': 53, None: 18, 'No overnight parking': 17, 'Limited No Parking': 27, 'Time LImited': 1, 'No Stopping': 1, 'Paid + Permit': 3, 'No Oversized Vehicles': 1, 'No Parking Anytime': 2}
+Join: 7079 block sides matched >=1 regulation; 6808 regulations matched, 970 unmatched (drawn on their own)
+Regulations matched per side: {0: 15459, 1: 6774, 3: 23, 2: 272, 4: 10}
+Sides matched per regulation: {0: 970, 1: 6336, 2: 406, 3: 37, 4: 14, 5: 6, 6: 1, 7: 4, 9: 2, 12: 1, 18: 1}
+Meters: {'inactive or removed': 7614, 'active, matched': 29338, 'off-street lot': 581, 'active, no side within 10m': 1207} -> 3662 metered block sides
