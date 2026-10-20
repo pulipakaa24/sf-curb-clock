@@ -277,7 +277,7 @@ p { margin: 0; }
   var regs = DATA.regs;
   var sides = DATA.sides.map(function (s) {
     return {
-      street: s.s, limits: s.l, side: s.b, area: DATA.nh[s.a], metered: s.m > 0, meters: s.m, coords: s.g.map(function (c) { return [c[1], c[0]]; }),
+      street: s.s, limits: s.l, side: s.b, area: DATA.nh[s.a], metered: s.m > 0, meters: s.m, part: s.p || null, coords: s.g.map(function (c) { return [c[1], c[0]]; }),
       sweeps: s.w.map(function (w) { return { wd: w[0], from: w[1], to: w[2], weeks: [0, 1, 2, 3, 4].map(function (i) { return !!(w[3] & (1 << i)); }) }; }),
       regs: s.r.map(function (i) { return regs[i]; }).concat(s.m > 0 ? [E.METERED] : []), orphan: false
     };
@@ -387,6 +387,10 @@ p { margin: 0; }
     var r = s.result, H = opts.hours, b = E.band(r.stay, H);
     var title = s.orphan ? 'Regulated curb, no sweeping data' : esc(s.street);
     var sub = s.orphan ? esc(s.area) : esc(s.limits) + ' · ' + esc(s.side) + ' side · ' + esc(s.area) + (s.meters ? ' · ' + s.meters + (s.meters === 1 ? ' meter' : ' meters') : '');
+    var part = '';
+    if (s.part) part = '<p class="muted">' + (s.meters
+      ? 'Metered stretch: about ' + s.part[0] + ' m of this ' + s.part[1] + ' m block side. The rest of the block has no meters.'
+      : 'No meters on this stretch (' + s.part[0] + ' m). Meters cover about ' + s.part[2] + ' m elsewhere on this block side.') + '</p>';
     var why = r.end == null
       ? 'Nothing in the data ends your stay before <time>' + fmtWhen(opts.arrival + H * HOUR) + '</time>.'
       : (r.stay <= 0 ? 'Not allowed on arrival: ' : 'Stay ends <time>' + fmtWhen(r.end) + '</time>: ') + esc(r.reason) + '.';
@@ -398,7 +402,7 @@ p { margin: 0; }
       : '<p class="muted">No regulation in the data for this side.</p>';
     return '<div class="pop"><h3>' + title + '</h3><div class="sub">' + sub + '</div>' +
       '<div class="stay"><span class="h">' + fmtStay(r.stay) + '</span><span class="chip" style="background:' + color(b) + '">' + esc(BANDS.filter(function (x) { return x.key === b; })[0].label(H)) + '</span></div>' +
-      '<p class="why">' + why + '</p><h4>Street sweeping</h4>' + sweeps + '<h4>Regulations</h4>' + rg +
+      part + '<p class="why">' + why + '</p><h4>Street sweeping</h4>' + sweeps + '<h4>Regulations</h4>' + rg +
       '<p class="links"><a href="' + gmaps(s, false) + '" target="_blank" rel="noopener">Google Maps</a><a href="' + gmaps(s, true) + '" target="_blank" rel="noopener">Street View (check the signs)</a></p></div>';
   }
 

@@ -22,6 +22,7 @@ import datetime
 import json
 import math
 import os
+import re
 import sys
 import urllib.request
 from collections import Counter, defaultdict
@@ -40,6 +41,9 @@ DATASETS = {
 HOSTS = ['https://data.sfgov.org', 'https://data.sf.gov']
 
 METER_MATCH_M = 10.0                 # a meter belongs to the nearest side line within this distance
+METER_PAD_M = 4.0                    # metered stretch extends this far past the first and last meter
+METER_GAP_M = 20.0                   # meters further apart than this start a separate metered stretch
+MIN_PIECE_M = 25.0                   # unmetered leftovers shorter than this (corners, driveways, hydrants) count as metered
 GRID_M = 150.0                       # spatial index cell size
 SIDE_OFFSET_M = 6.0                  # draw each sweeping side this far from the centerline
 MATCH_DIST_M = 6.5                   # regulation must be within this of the offset side line
@@ -84,6 +88,85 @@ def point_along(pts, frac):
     a, b = pts[-2], pts[-1]
     d = math.dist(a, b) or 1.0
     return b, ((b[0] - a[0]) / d, (b[1] - a[1]) / d)
+
+
+def project_along(pts, q):
+    """Distance along the polyline to the point nearest q."""
+    best, best_d, run = 0.0, float('inf'), 0.0
+    for a, b in zip(pts, pts[1:]):
+        dx, dy = b[0] - a[0], b[1] - a[1]
+        L2 = dx * dx + dy * dy
+        t = 0.0 if L2 == 0 else max(0.0, min(1.0, ((q[0] - a[0]) * dx + (q[1] - a[1]) * dy) / L2))
+        d = math.hypot(q[0] - a[0] - t * dx, q[1] - a[1] - t * dy)
+        if d < best_d:
+            best, best_d = run + t * math.sqrt(L2), d
+        run += math.sqrt(L2)
+    return best
+
+
+def sub_line(pts, start, end):
+    """The part of a polyline between two distances along it."""
+    out, run = [], 0.0
+    for a, b in zip(pts, pts[1:]):
+        d = math.dist(a, b)
+        lo, hi = max(start, run), min(end, run + d)
+        if d > 0 and lo <= hi:
+            pa = (a[0] + (b[0] - a[0]) * (lo - run) / d, a[1] + (b[1] - a[1]) * (lo - run) / d)
+            pb = (a[0] + (b[0] - a[0]) * (hi - run) / d, a[1] + (b[1] - a[1]) * (hi - run) / d)
+            if not out:
+                out.append(pa)
+            out.append(pb)
+        run += d
+    return out if len(out) >= 2 else [pts[0], pts[-1]]
+
+
+def street_key(name):
+    """Loose street-name key: 'O'FARRELL ST' == 'OFARRELL ST', '03rd Ave' == '3RD AVE'."""
+    x = re.sub(r"[^A-Z0-9 ]", '', (name or '').upper())
+    x = re.sub(r"\b0+(\d)", r"\1", x)
+    drop = {'THE', 'ST', 'AVE', 'BLVD', 'DR', 'PL', 'WAY', 'NORTH', 'SOUTH', 'EAST', 'WEST', 'FRONTAGE', 'STREET', 'AVENUE'}
+    return ''.join(w for w in x.split() if w not in drop)
+
+
+def same_street(a, b):
+    ka, kb = street_key(a), street_key(b)
+    return bool(ka) and ka == kb
+
+
+def metered_pieces(length_m, ts):
+    """Split a side of length_m into (start, end, n_meters) pieces from meter positions ts.
+
+    Meters only cover part of many blocks (e.g. the first few spaces around a commercial
+    corner), so only the stretch they occupy is treated as metered.
+    """
+    if not ts:
+        return [(0.0, length_m, 0)]
+    ts = sorted(ts)
+    spans = []
+    for t in ts:
+        if spans and t - spans[-1][1] <= METER_GAP_M:
+            spans[-1][1] = t
+            spans[-1][2] += 1
+        else:
+            spans.append([t, t, 1])
+    spans = [[max(0.0, a - METER_PAD_M), min(length_m, b + METER_PAD_M), n] for a, b, n in spans]
+    pieces, pos = [], 0.0
+    for a, b, n in spans:
+        if a - pos < MIN_PIECE_M:
+            a = pos
+        if pieces and pieces[-1][2] and a <= pieces[-1][1]:
+            pieces[-1] = (pieces[-1][0], max(b, pieces[-1][1]), pieces[-1][2] + n)
+        else:
+            if a > pos:
+                pieces.append((pos, a, 0))
+            pieces.append((a, b, n))
+        pos = max(pos, b)
+    if length_m - pos < MIN_PIECE_M:
+        last = pieces[-1]
+        pieces[-1] = (last[0], length_m, last[2]) if last[2] else (last[0], length_m, 0)
+    else:
+        pieces.append((pos, length_m, 0))
+    return pieces
 
 
 def offset_line(pts, dist):
@@ -268,7 +351,7 @@ def build(wanted=None):
             s = sides[key] = {
                 'cnn': p['cnn'], 'lr': p['cnnrightleft'], 'street': p.get('corridor') or '',
                 'limits': ' '.join((p.get('limits') or '').split()), 'blockside': p.get('blockside'),
-                'coords': coords, 'mid': mid, 'area': nh, 'sweeps': [], 'ids': [], 'meters': 0,
+                'coords': coords, 'mid': mid, 'area': nh, 'sweeps': [], 'ids': [], 'meters': 0, 'meter_t': [],
             }
         elif s['coords'] != coords:
             geom_mismatch += 1
@@ -388,19 +471,33 @@ def build(wanted=None):
                     stats['no location'] += 1
                     continue
             q = to_m((lon, lat))
-            best, bd = None, METER_MATCH_M
+            # nearest curb on the meter's own street; a cross street's curb near the corner doesn't count
+            best, bd, other = None, METER_MATCH_M, False
             for s in sgrid.near([q], pad=METER_MATCH_M):
                 d = min(seg_dist(q, a, b) for a, b in zip(s['off'], s['off'][1:]))
-                if d < bd:
+                if d >= METER_MATCH_M:
+                    continue
+                if not same_street(p.get('street_name'), s['street']):
+                    other = True
+                elif d < bd:
                     best, bd = s, d
             if best is None:
-                stats['active, no side within %dm' % METER_MATCH_M] += 1
+                stats['active, only other streets nearby' if other else 'active, no side within %dm' % METER_MATCH_M] += 1
             else:
                 best['meters'] += 1
+                best['meter_t'].append(project_along(best['off'], q))
                 stats['active, matched'] += 1
-        log('Meters:', dict(stats), f'-> {sum(1 for s in sides.values() if s["meters"])} metered block sides')
+        partial = 0
+        for s in sides.values():
+            s['pieces'] = metered_pieces(length(s['off']), s['meter_t'])
+            if s['meters'] and len(s['pieces']) > 1:
+                partial += 1
+        log('Meters:', dict(stats), f'-> {sum(1 for s in sides.values() if s["meters"])} block sides with meters, '
+            f'{partial} of them only partly metered (split into metered and unmetered stretches)')
     else:
         log('Meters: raw/meters.geojson not found, metered curbs are NOT marked')
+    for s in sides.values():
+        s.setdefault('pieces', [(0.0, length(s['off']), 0)])
 
     return sides, regs, unmatched, report
 
@@ -419,7 +516,7 @@ def write_outputs(sides, regs, unmatched, report):
     for s in order:
         feats.append({'type': 'Feature', 'geometry': {'type': 'LineString', 'coordinates': [to_ll(q) for q in s['off']]},
                       'properties': {'cnn': s['cnn'], 'side_lr': s['lr'], 'blockside': s['blockside'], 'street': s['street'],
-                                     'limits': s['limits'], 'neighborhood': s['area'], 'side_placed_by': s['how'], 'active_meters': s['meters'],
+                                     'limits': s['limits'], 'neighborhood': s['area'], 'side_placed_by': s['how'], 'active_meters': s['meters'], 'metered_stretches_m': [[round(a, 1), round(b, 1)] for a, b, n in s['pieces'] if n],
                                      'blocksweepids': s['ids'], 'sweeps': s['sweeps'],
                                      'regulations': [reg_public(regs[i]) for i in s['regs']]}})
     with open(os.path.join(OUT, 'sf_blocksides.geojson'), 'w') as f:
@@ -451,11 +548,11 @@ def write_outputs(sides, regs, unmatched, report):
         return ' '.join(bits)
     with open(os.path.join(OUT, 'sf_blocksides.csv'), 'w', newline='') as f:
         w = csv.writer(f)
-        w.writerow(['street', 'limits', 'side', 'side_lr', 'neighborhood', 'cnn', 'sweeping_schedule', 'regulations', 'active_meters', 'source'])
+        w.writerow(['street', 'limits', 'side', 'side_lr', 'neighborhood', 'cnn', 'sweeping_schedule', 'regulations', 'active_meters', 'metered_stretch_m', 'source'])
         for s in order:
             w.writerow([s['street'], s['limits'], s['blockside'], s['lr'], s['area'], s['cnn'],
                         '; '.join(sweep_txt(r) for r in merge_sweeps(s['sweeps'])),
-                        '; '.join(reg_txt(regs[i]) for i in s['regs']), s['meters'], 'sweeping'])
+                        '; '.join(reg_txt(regs[i]) for i in s['regs']), s['meters'], '; '.join(f'{a:.0f}-{b:.0f} of {length(s["off"]):.0f}' for a, b, n in s['pieces'] if n), 'sweeping'])
         for r in unmatched:
             w.writerow(['', '', '', '', r['area'], '', '', reg_txt(r), '', f"regulation only (objectid {r['id']})"])
 
@@ -475,16 +572,27 @@ def write_outputs(sides, regs, unmatched, report):
         for lon, lat in s['coords']:
             b[0] = min(b[0], lat); b[1] = min(b[1], lon); b[2] = max(b[2], lat); b[3] = max(b[3], lon)
     rnd = lambda pts: [[round(c[0], 5), round(c[1], 5)] for c in pts]
+
+    def side_pieces(s):
+        base = {'s': s['street'], 'l': s['limits'], 'b': s['blockside'] or s['lr'], 'a': nh_index[s['area']],
+                'w': [[r['wd'], r['from'], r['to'], sum(1 << i for i, on in enumerate(r['weeks']) if on)] for r in s['sweeps']],
+                'r': [remap[i] for i in s['regs']]}
+        total = length(s['off'])
+        metered = sum(b - a for a, b, n in s['pieces'] if n)
+        out = []
+        for a, b, n in s['pieces']:
+            piece = dict(base, m=n, g=rnd([to_ll(q) for q in sub_line(s['off'], a, b)]))
+            if len(s['pieces']) > 1:
+                piece['p'] = [round(b - a), round(total), round(metered)]
+            out.append(piece)
+        return out
     payload = {
         'downloaded_at': downloaded,
         'regs': compact_regs,
         'has_meters': os.path.exists(os.path.join(RAW, 'meters.geojson')),
         'nh': nh_names,
         'nh_bounds': nh_bounds,
-        'sides': [{'s': s['street'], 'l': s['limits'], 'b': s['blockside'] or s['lr'], 'a': nh_index[s['area']], 'm': s['meters'],
-                   'w': [[r['wd'], r['from'], r['to'], sum(1 << i for i, on in enumerate(r['weeks']) if on)] for r in s['sweeps']],
-                   'r': [remap[i] for i in s['regs']],
-                   'g': rnd([to_ll(q) for q in s['off']])} for s in order],
+        'sides': [piece for s in order for piece in side_pieces(s)],
         'orphans': [{'r': remap[r['idx']], 'a': nh_index[r['area']],
                      'g': [rnd(l) for l in r['lines']]} for r in unmatched],
         'raw': [{'r': remap[i], 'g': [rnd(l) for l in regs[i]['lines']]} for i in used],

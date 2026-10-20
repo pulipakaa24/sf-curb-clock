@@ -19,6 +19,7 @@ Or open `sf_72hr_map.html` in any browser. Everything the map needs is inside th
 | `pipeline.py` | Download → clip → offset → join → write everything above (standard library only, ~4 s citywide) |
 | `engine.js` | The time-window rules, shared by the page and the tests |
 | `test_engine.js` | The brief's test cases plus citywide edge cases |
+| `test_pipeline.py` | Meter matching checks, including the 23rd Ave case |
 | `map_template.html` | Page template the pipeline fills in |
 | `raw/` | Raw DataSF downloads used for this build |
 | `vendor/` | Leaflet 1.9.4 (BSD-2, license included) |
@@ -40,7 +41,7 @@ python3 pipeline.py --download
 ```
 
 ```bash
-node test_engine.js
+node test_engine.js && python3 test_pipeline.py
 ```
 
 `--neighborhoods` builds a smaller map of just those areas. `--download` fetches fresh data first and needs network access to data.sfgov.org.
@@ -63,13 +64,18 @@ One-time setup: in the repo's Settings → Pages, set **Source** to **GitHub Act
 | Street Sweeping Schedule | `yhqp-riqs` | 37,878 rows → 22,538 block sides |
 | Parking regulations (except non-metered color curb) | `hi6h-neyh` | 7,778 with geometry |
 | Analysis Neighborhoods | `j2bu-swwd` | 41 polygons, for clipping and the neighborhood picker |
-| Parking Meters | `8vzz-qzz9` | 38,740 meters → 29,338 active on-street meters on 3,662 block sides |
+| Parking Meters | `8vzz-qzz9` | 38,740 meters → 29,196 active on-street meters on 3,539 block sides |
 
 **Downloaded 2026-10-19 06:43 UTC** (`raw/DOWNLOADED_AT.txt`); meters downloaded 2026-10-19 21:18 UTC. The publisher last modified the regulations data on 2026-06-13, and many records were last edited in 2017.
 
 **Meters:** if `raw/meters.geojson` is missing, the build still works, but the page shows a warning that metered curbs appear free. The meter list is current (weekly), but DataSF's [Meter Operating Schedules](https://data.sf.gov/Transportation/Meter-Operating-Schedules/6cqg-dxku) table was last updated in 2014. So any curb with an active meter within 10 m gets one assumed rule: metered every day 9 AM–6 PM. That's conservative for meters that skip Sundays, and wrong for meters with longer hours.
 
-Meter matching uses active meters only (flag `M` or `T`, per DataSF) and skips the 581 active meters in off-street lots. Every cap color counts, including yellow commercial and red truck meters. 1,207 active meters (4%) have no curb line within 10 m, because their streets are missing from the sweeping data. Most are in Mission Bay (Terry A Francois Blvd, Townsend, Long Bridge), plus Iowa St and Portola Dr. Those curbs show no line at all.
+Meter matching uses active meters only (flag `M` or `T`, per DataSF) and skips the 581 active meters in off-street lots. Every cap color counts, including yellow commercial and red truck meters.
+
+- **Same street only.** Each meter goes to the nearest curb within 10 m on its own street. Names are compared loosely, so `OFARRELL ST` matches `O'Farrell St` and `3RD ST` matches `03rd St`, but `3RD ST` doesn't match `23rd St`. 142 meters had only another street's curb nearby and were dropped.
+- **Metered stretches, not whole blocks.** Meters often cover only part of a block, like the first few spaces around a commercial corner. So only the stretch from the first meter to the last, plus 4 m each side, counts as metered. Meters more than 20 m apart start a new stretch. Unmetered leftovers shorter than 25 m (corners, driveways, hydrants) count as metered. Of the 3,539 block sides with meters, 1,764 are only partly metered and are split.
+- **Example:** 23rd Ave between Irving and Judah is metered only within about 35 m of Irving; the other 171 m toward Judah has no meters.
+- **Unmatched meters:** 1,207 active meters (4%) have no curb line within 10 m, because their streets are missing from the sweeping data. Most are in Mission Bay (Terry A Francois Blvd, Townsend, Long Bridge), plus Iowa St and Portola Dr. Those curbs show no line at all.
 
 ## How it works
 

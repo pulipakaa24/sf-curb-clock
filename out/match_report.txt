@@ -5,4 +5,4 @@ Regulations: 7778 records in study area; {'Time limited': 6837, 'Time Limited': 
 Join: 7079 block sides matched >=1 regulation; 6808 regulations matched, 970 unmatched (drawn on their own)
 Regulations matched per side: {0: 15459, 1: 6774, 3: 23, 2: 272, 4: 10}
 Sides matched per regulation: {0: 970, 1: 6336, 2: 406, 3: 37, 4: 14, 5: 6, 6: 1, 7: 4, 9: 2, 12: 1, 18: 1}
-Meters: {'inactive or removed': 7614, 'active, matched': 29338, 'off-street lot': 581, 'active, no side within 10m': 1207} -> 3662 metered block sides
+Meters: {'inactive or removed': 7614, 'active, matched': 29196, 'off-street lot': 581, 'active, only other streets nearby': 142, 'active, no side within 10m': 1207} -> 3539 block sides with meters, 1764 of them only partly metered (split into metered and unmetered stretches)
